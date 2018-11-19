@@ -1,24 +1,65 @@
+from functools import partial
+from email.utils import unquote
+from email.mime.image import MIMEImage
 
-#From http://stackoverflow.com/questions/2687173/django-how-can-i-get-a-block-from-a-template
-from django.template import Context
-from django.template.loader_tags import BlockNode, ExtendsNode
+from django.core.mail import make_msgid
+from django.utils.module_loading import import_string
+from django.conf import settings
+
+import six
 
 
-class BlockNotFound(Exception):
-    pass
+def _get_klass_from_config(config_variable, default):
+    klass_path = getattr(settings, config_variable, default)
+    if isinstance(klass_path, six.string_types):
+        klass_path = import_string(klass_path)
+
+    return klass_path
 
 
-def _get_node(template, context=Context(), name='subject', block_lookups={}):
-    for node in template:
-        if isinstance(node, BlockNode) and node.name == name:
-            #Rudimentary handling of extended templates, for issue #3
-            for i in xrange(len(node.nodelist)):
-                n = node.nodelist[i]
-                if isinstance(n, BlockNode) and n.name in block_lookups:
-                    node.nodelist[i] = block_lookups[n.name]
-            return node.render(context)
-        elif isinstance(node, ExtendsNode):
-            lookups = dict([(n.name, n) for n in node.nodelist if isinstance(n, BlockNode)])
-            lookups.update(block_lookups)
-            return _get_node(node.get_parent(context), context, name, lookups)
-    raise BlockNotFound("Node '%s' could not be found in template." % name)
+get_emailmessage_klass = partial(
+    _get_klass_from_config,
+    'TEMPLATED_EMAIL_EMAIL_MESSAGE_CLASS',
+    'django.core.mail.EmailMessage'
+)
+
+get_emailmultialternatives_klass = partial(
+    _get_klass_from_config,
+    'TEMPLATED_EMAIL_EMAIL_MULTIALTERNATIVES_CLASS',
+    'django.core.mail.EmailMultiAlternatives',
+)
+
+
+class InlineImage(object):
+
+    def __init__(self, filename, content, subtype=None, domain=None):
+        self.filename = filename
+        self._content = content
+        self.subtype = subtype
+        self.domain = domain
+        self._content_id = None
+
+    @property
+    def content(self):
+        return self._content
+
+    @content.setter
+    def content(self, value):
+        self._content_id = None
+        self._content = value
+
+    def attach_to_message(self, message):
+        if not self._content_id:
+            self.generate_cid()
+        image = MIMEImage(self.content, self.subtype)
+        image.add_header('Content-Disposition', 'inline', filename=self.filename)
+        image.add_header('Content-ID', self._content_id)
+        message.attach(image)
+
+    def generate_cid(self):
+        self._content_id = make_msgid('img', self.domain)
+
+    def __str__(self):
+        if not self._content_id:
+            self.generate_cid()
+        return 'cid:' + unquote(self._content_id)

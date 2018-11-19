@@ -1,4 +1,3 @@
-from django.core.exceptions import ImproperlyConfigured
 from django.test import TestCase
 
 from templated_email import get_connection, backends
@@ -19,6 +18,14 @@ class GetConnectionTestCase(TestCase):
         self.assertIsInstance(connection,
                               backends.vanilla_django.TemplateBackend)
 
+    def test_class_name_omitted(self):
+        klass = 'templated_email.backends.vanilla_django'
+
+        connection = get_connection(klass)
+
+        self.assertIsInstance(connection,
+                              backends.vanilla_django.TemplateBackend)
+
     def test_class_instance(self):
         klass = backends.vanilla_django.TemplateBackend
 
@@ -29,9 +36,9 @@ class GetConnectionTestCase(TestCase):
     def test_non_existing_module(self):
         klass = 'templated_email.backends.non_existing.NoBackend'
 
-        self.assertRaises(ImproperlyConfigured, get_connection, klass)
+        self.assertRaises(ImportError, get_connection, klass)
 
     def test_non_existing_class(self):
         klass = 'templated_email.backends.vanilla_django.NoBackend'
 
-        self.assertRaises(ImproperlyConfigured, get_connection, klass)
+        self.assertRaises(ImportError, get_connection, klass)
